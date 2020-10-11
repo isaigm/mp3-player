@@ -1,194 +1,200 @@
 package mx.uv.fiee.iinf.mp3player;
 
-import android.annotation.SuppressLint;
+import android.Manifest;
 import android.app.Activity;
-import android.content.SharedPreferences;
-import android.media.MediaPlayer;
+import android.app.ListActivity;
+import android.content.ContentUris;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.util.Log;
-import android.widget.Button;
-import android.widget.SeekBar;
+import android.provider.MediaStore;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.TextView;
 import android.widget.Toast;
-
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-
-import java.io.IOException;
-import java.util.HashMap;
+import androidx.annotation.RequiresApi;
+import androidx.recyclerview.widget.DividerItemDecoration;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+import java.util.LinkedList;
+import java.util.List;
 
 public class MainActivity extends Activity {
-    static MediaPlayer player = null;
-    static HashMap <Integer, String> songs;
-    int mCurrentSong = -1;
-    static boolean fromResume = false;
-    SeekBar sbProgress;
+    public static final int REQUEST_CODE = 1001;
+    public static final int REQUEST_CODE_EXTERNAL_STORAGE = 1002;
+
+    RecyclerView lv;
+
+    @RequiresApi(api = Build.VERSION_CODES.R)
     @Override
-    protected void onPause() {
-        super.onPause();
-        Log.d("Event", "onPause");
-        if(player != null && player.isPlaying())
-        {
-            player.pause();
-        }
-    }
-    @Override
-    protected void onResume() {
-        super.onResume();
-        Log.d("Event", "onResume");
-        @SuppressLint("CommitPrefEdits") SharedPreferences preferences = getSharedPreferences("preferences", 0);
-        int song = preferences.getInt("currentSong", -1);
-        int pos = preferences.getInt("position", -1);
-        if(song != -1 && pos != -1 && mCurrentSong != -1)
-        {
-            player.seekTo(pos);
-            player.start();
-        }
-        fromResume = true;
-    }
-    @Override
-    protected void onStop()
-    {
-        super.onStop();
-        Log.d("Event", "onStop");
-        @SuppressLint("CommitPrefEdits") SharedPreferences.Editor editor = getSharedPreferences("preferences", MODE_PRIVATE).edit();
-        if(player != null)
-        {
-            editor.putInt("position", player.getCurrentPosition());
-            editor.putInt("currentSong", mCurrentSong);
-            editor.apply();
-        }
-    }
-    @Override
-    protected void onStart()
-    {
-        super.onStart();
-        Log.d("Event", "onStart");
-        @SuppressLint("CommitPrefEdits") SharedPreferences preferences = getSharedPreferences("preferences", 0);
-        int song = preferences.getInt("currentSong", -1);
-        int pos = preferences.getInt("position", -1);
-        if(song != -1 && pos != -1 && !fromResume)
-        {
-            resumeSong(song, pos);
-        }
-    }
-    void resumeSong(int whatSong, int pos)
-    {
-        mCurrentSong = whatSong;
-        Uri mediaUri = Uri.parse("android.resource://" + getBaseContext ().getPackageName () + "/" + whatSong);
-        try {
-            player.setDataSource(getBaseContext(), mediaUri);
-            player.prepare();
-            player.seekTo(pos);
-        } catch (IOException ex) { ex.printStackTrace(); }
-        sbProgress.setProgress(pos / 1000);
-    }
-    void playSong(int whatSong){
-        if (player != null && player.isPlaying()) {
-            player.stop();
-            sbProgress.setProgress(0);
-            player.reset();
-        }
-        Uri mediaUri = Uri.parse("android.resource://" + getBaseContext ().getPackageName () + "/" + whatSong);
-        try {
-            player.setDataSource(getBaseContext(), mediaUri);
-            player.prepare();
-            Toast.makeText(getApplicationContext(), "Now playing: " + songs.get(whatSong), Toast.LENGTH_LONG).show();
-        } catch (IOException ex) { ex.printStackTrace(); }
-    }
-    @Override
-    protected void onCreate (@Nullable Bundle savedInstanceState) {
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        Log.d("Event", "onCreate");
-        setContentView (R.layout.activity_main);
-        sbProgress = findViewById(R.id.sbProgress);
-        Handler updateHandler = new Handler();
-        player = new MediaPlayer();
-        songs = new HashMap<Integer, String>();
-        songs.put(R.raw.mr_blue_sky, "Mr. Blue Sky");
-        songs.put(R.raw.lake_shore_drive, "Lake Shoe Drive");
-        songs.put(R.raw.fox_on_the_run, "Fox On The Run");
-        MainActivity.this.runOnUiThread( new Runnable() {
-            public void run() {
-                if(player != null){
-                    if(player.isPlaying()) {
-                        sbProgress.setProgress(player.getCurrentPosition() / 1000);
-                    }
+        setContentView(R.layout.main_activity);
+
+        lv = findViewById (R.id.list);
+        lv.setLayoutManager (new LinearLayoutManager (getBaseContext(), RecyclerView.VERTICAL, false));
+        lv.addItemDecoration (new DividerItemDecoration (getBaseContext (), DividerItemDecoration.VERTICAL));
+
+        // solicita el permiso necesario para leer del almacenamiento externo
+        int perm = getBaseContext ().checkSelfPermission (Manifest.permission.READ_EXTERNAL_STORAGE);
+        if (perm != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions (
+                    new String [] { Manifest.permission.READ_EXTERNAL_STORAGE },
+                    REQUEST_CODE_EXTERNAL_STORAGE
+            );
+        } else {
+            loadAudios ();
+        }
+
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.R)
+    void loadAudios () {
+        String [] columns = { MediaStore.Audio.Media._ID, MediaStore.Audio.Media.DISPLAY_NAME};
+        String order = MediaStore.Audio.Media.DEFAULT_SORT_ORDER;
+        Cursor cursor =  getBaseContext().getContentResolver().query (MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, columns, null, null, order);
+        if (cursor == null) return;
+
+        LinkedList<AudioModel> artists = new LinkedList<> ();
+
+        for (int i = 0; i < cursor.getCount (); i++) {
+            cursor.moveToPosition (i);
+            AudioModel audioModel = new AudioModel ();
+            int index = cursor.getColumnIndexOrThrow (MediaStore.Audio.Media._ID);
+            audioModel.id = cursor.getLong (index);
+            index = cursor.getColumnIndexOrThrow (MediaStore.Audio.Media.DISPLAY_NAME);
+            audioModel.name = cursor.getString (index);
+            artists.add (audioModel);
+        }
+        cursor.close ();
+        MyAdapter adapter = new MyAdapter (getBaseContext (), artists);
+        adapter.setOnAudioSelectedListener(item -> {
+            Bundle song = new Bundle();
+            Intent intent = new Intent(getBaseContext(), DetailsActivity.class);
+            song.putString("song", item.toString());
+            intent.putExtras(song);
+            startActivity(intent);
+        }
+        );
+        lv.setAdapter (adapter);
+    }
+
+    /**
+     * Callback de la solicitud de permisos realizada en cualquier punto de la actividad.
+     *
+     * @param requestCode código de verificación de la solicitud
+     * @param permissions conjunto de permisos solicitados
+     * @param grantResults conjunto de resultados, permisos otorgados o denegados
+     */
+    @RequiresApi(api = Build.VERSION_CODES.R)
+    @Override
+    public void onRequestPermissionsResult (int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult (requestCode, permissions, grantResults);
+
+        switch (requestCode) {
+            case REQUEST_CODE:
+                if (grantResults.length > 0 && grantResults [0] == PackageManager.PERMISSION_GRANTED) {
+                    Toast.makeText (getBaseContext(),"Permission Granted!", Toast.LENGTH_LONG).show ();
                 }
-                updateHandler.postDelayed(this, 1000);
-            }
-        });
-        sbProgress.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if(player != null && fromUser)
-                {
-                    player.seekTo(progress * 1000);
+                break;
+            case REQUEST_CODE_EXTERNAL_STORAGE:
+                if (grantResults.length > 0 && grantResults [0] == PackageManager.PERMISSION_GRANTED) {
+                    loadAudios ();
                 }
-            }
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) { }
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) { }
-        });
-        player.setOnCompletionListener(mediaPlayer -> {
-            mediaPlayer.reset();
-            mCurrentSong = -1;
-        });
-        player.setOnPreparedListener(mediaPlayer -> {
-            sbProgress.setMax(mediaPlayer.getDuration() / 1000);
-            mediaPlayer.start();
-        });
-        Button btnAudio1 = findViewById(R.id.btnAudio1);
-        btnAudio1.setOnClickListener (v -> {
-            mCurrentSong = R.raw.mr_blue_sky;
-            playSong(mCurrentSong);
-        });
-        Button btnAudio2 = findViewById (R.id.btnAudio2);
-        btnAudio2.setOnClickListener (v -> {
-            mCurrentSong = R.raw.lake_shore_drive;
-            playSong(mCurrentSong);
-        });
-        Button btnAudio3 = findViewById (R.id.btnAudio3);
-        btnAudio3.setOnClickListener (v -> {
-            mCurrentSong = R.raw.fox_on_the_run;
-            playSong(mCurrentSong);
-        });
-    }
-    @Override
-    protected void onSaveInstanceState(@NonNull Bundle outState){
-        super.onSaveInstanceState(outState);
-        if(player != null && player.isPlaying()){
-            Log.d("INFO", "onSave");
-            outState.putInt("position", player.getCurrentPosition());
-            outState.putBoolean("isPlaying", true);
-            outState.putInt("currentSong", mCurrentSong);
-            player.pause();
-        }
-        else outState.putBoolean("isPlaying", false);
-    }
-    @Override
-    protected void onRestoreInstanceState(@NonNull Bundle savedInstance){
-        super.onRestoreInstanceState(savedInstance);
-        if(player != null && savedInstance.getBoolean("isPlaying")){
-            Log.d("INFO", "onRestore");
-            int pos = savedInstance.getInt("position");
-            int song = savedInstance.getInt("currentSong");
-            resumeSong(song, pos);
         }
     }
+
+    /**
+     * Callback invocado después de llamar a startActivityForResult
+     *
+     * @param requestCode código de verificación de la llamadas al método
+     * @param resultCode resultado: OK, CANCEL, etc.
+     * @param data información resultante, si existe
+     */
     @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        Log.d("Event", "onDestroy");
-        // cleanup
-        super.onStop();
-        if (player.isPlaying()) {
-            player.stop();
-            player.release();
-        }
-        player = null;
-        fromResume = false;
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
     }
+}
+
+/**
+ * Adaptador personalizado para controlar el llenado de datos del recyclerview
+ */
+class MyAdapter extends RecyclerView.Adapter<MyAdapter.MyViewHolder> {
+    private Context context;
+    private List<AudioModel> data;
+    private OnAudioSelectedListener listener;
+
+    public MyAdapter (Context context, List<AudioModel> data) {
+        this.data = data;
+        this.context = context;
+    }
+
+    /**
+     * Manajador para el evento de selección de elemento en la lista
+     * @param listener objeto que implementa la interfaz OnAudioSelectedListener
+     */
+    public void setOnAudioSelectedListener (OnAudioSelectedListener listener) {
+        this.listener = listener;
+    }
+
+    @NonNull
+    @Override
+    public MyViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        View view = LayoutInflater.from (context).inflate (R.layout.list_item, parent, false);
+        return new MyViewHolder(view);
+    }
+
+    @Override
+    public void onBindViewHolder (@NonNull MyViewHolder holder, int position) {
+        String foo = data.get (position).name;
+        holder.text1.setText (foo);
+
+        holder.itemView.setOnClickListener (v -> {
+            Uri contentUri = ContentUris.withAppendedId (
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    data.get (position).id
+            );
+
+            listener.audioSelected (contentUri);
+        });
+    }
+
+    @Override
+    public int getItemCount () {
+        return data.size ();
+    }
+
+
+    /**
+     * Mantiene referencia al componente que interesa reutilizar en la vista
+     */
+    static class MyViewHolder extends RecyclerView.ViewHolder {
+        TextView text1;
+
+        public MyViewHolder (@NonNull View itemView) {
+            super(itemView);
+            text1 = itemView.findViewById (R.id.tvItem);
+        }
+    }
+
+}
+
+/**
+ * Interfaz que define al objeto manajador del evento click en algun elemento de la lista
+ */
+interface OnAudioSelectedListener {
+    void audioSelected (Uri item);
+}
+
+class AudioModel {
+    long id;
+    String name;
 }
