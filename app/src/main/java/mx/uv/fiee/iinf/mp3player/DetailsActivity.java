@@ -126,6 +126,7 @@ public class DetailsActivity extends Activity{
                 duration = player.getDuration();
                 player.pause();
                 fromPause = true;
+                fromSave = false;
             }
         });
     }
