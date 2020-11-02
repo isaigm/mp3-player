@@ -82,7 +82,7 @@ public class DetailsActivity extends Activity{
             startService(new Intent(this, MusicService.class));
             if(musicService.isPaused()){
                 musicService.resumeSong();
-            }else{
+            }else if(!musicService.isPlaying()){
                 musicService.playSong(mCurrentSong, mTitle);
             }
         });
