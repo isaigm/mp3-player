@@ -2,7 +2,6 @@ package mx.uv.fiee.iinf.mp3player;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.ListActivity;
 import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
@@ -29,19 +28,15 @@ import java.util.List;
 public class MainActivity extends Activity {
     public static final int REQUEST_CODE = 1001;
     public static final int REQUEST_CODE_EXTERNAL_STORAGE = 1002;
-
     RecyclerView lv;
-
     @RequiresApi(api = Build.VERSION_CODES.R)
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main_activity);
-
         lv = findViewById (R.id.list);
         lv.setLayoutManager (new LinearLayoutManager (getBaseContext(), RecyclerView.VERTICAL, false));
         lv.addItemDecoration (new DividerItemDecoration (getBaseContext (), DividerItemDecoration.VERTICAL));
-
         // solicita el permiso necesario para leer del almacenamiento externo
         int perm = getBaseContext ().checkSelfPermission (Manifest.permission.READ_EXTERNAL_STORAGE);
         if (perm != PackageManager.PERMISSION_GRANTED) {
@@ -75,10 +70,11 @@ public class MainActivity extends Activity {
         }
         cursor.close ();
         MyAdapter adapter = new MyAdapter (getBaseContext (), artists);
-        adapter.setOnAudioSelectedListener(item -> {
+        adapter.setOnAudioSelectedListener((item, name) -> {
             Bundle song = new Bundle();
             Intent intent = new Intent(getBaseContext(), DetailsActivity.class);
             song.putString("song", item.toString());
+            song.putString("title", name);
             intent.putExtras(song);
             startActivity(intent);
         }
@@ -163,7 +159,7 @@ class MyAdapter extends RecyclerView.Adapter<MyAdapter.MyViewHolder> {
                     data.get (position).id
             );
 
-            listener.audioSelected (contentUri);
+            listener.audioSelected (contentUri, foo);
         });
     }
 
@@ -191,10 +187,11 @@ class MyAdapter extends RecyclerView.Adapter<MyAdapter.MyViewHolder> {
  * Interfaz que define al objeto manajador del evento click en algun elemento de la lista
  */
 interface OnAudioSelectedListener {
-    void audioSelected (Uri item);
+    void audioSelected (Uri item, String title);
 }
 
 class AudioModel {
     long id;
     String name;
+
 }

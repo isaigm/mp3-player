@@ -1,25 +1,30 @@
 package mx.uv.fiee.iinf.mp3player;
 import android.app.Activity;
-import android.media.MediaPlayer;
-import android.net.Uri;
+import android.content.BroadcastReceiver;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.IBinder;
 import android.util.Log;
 import android.widget.ImageButton;
 import android.widget.SeekBar;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import java.io.IOException;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 
 public class DetailsActivity extends Activity{
 
-    static MediaPlayer player = null;
-    String mCurrentSong = "";
-    SeekBar sbProgress;
-    int mLastPos = 0;
-    boolean fromPause = false;
-    static boolean fromSave = false;
-    int duration = 0;
+    private SeekBar sbProgress;
+    private MusicService musicService;
+    private String mCurrentSong;
+    private static final String CHANNEL_ID = "NOTIFICATION";
+    private boolean mBound = false;
     @Override
     protected void onPause() {
         super.onPause();
@@ -35,51 +40,41 @@ public class DetailsActivity extends Activity{
     {
         super.onStop();
         Log.d("Event", "onStop");
+        unbindService(serviceConnection);
+        mBound = false;
     }
     @Override
     protected void onStart()
     {
         super.onStart();
         Log.d("Event", "onStart");
+        Intent intent = new Intent(getBaseContext (), MusicService.class);
+        bindService(intent, serviceConnection, BIND_AUTO_CREATE);
     }
-    void resumeSong(int pos)
-    {
-        try {
-            player.setDataSource(getBaseContext(), Uri.parse(mCurrentSong));
-            player.prepare();
-            player.seekTo(pos);
-        } catch (IOException ex) { ex.printStackTrace(); }
-        sbProgress.setProgress(pos / 1000);
-    }
-    void playSong(){
-        if (player != null && player.isPlaying()) {
-            player.stop();
-            sbProgress.setProgress(0);
-            player.reset();
-        }
-        try {
-            assert player != null;
-            player.setDataSource(getBaseContext(),  Uri.parse(mCurrentSong));
-            player.prepare();
-        } catch (IOException ex) { ex.printStackTrace(); }
-    }
+
     @Override
     protected void onCreate (@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Log.d("Event", "onCreate");
         Bundle song = getIntent().getExtras();
-        if(song != null){
-            mCurrentSong = song.getString("song");
-        }
+        mCurrentSong = song.getString("song");
+        String mTitle = song.getString("title");
         setContentView(R.layout.activity_details);
         sbProgress = findViewById(R.id.sbProgress);
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.baseline_queue_music_white_24dp)
+                .setContentTitle("MP3-Player")
+                .setContentText(mTitle)
+                .setPriority(NotificationCompat.PRIORITY_HIGH);
+        NotificationManagerCompat notificationManagerCompat = NotificationManagerCompat.from(getApplicationContext());
+        notificationManagerCompat.notify(0, builder.build());
         Handler updateHandler = new Handler();
-        player = new MediaPlayer();
-        DetailsActivity.this.runOnUiThread( new Runnable() {
+        DetailsActivity.this.runOnUiThread(new Runnable() {
             public void run() {
-                if(player != null){
-                    if(player.isPlaying()) {
-                        sbProgress.setProgress(player.getCurrentPosition() / 1000);
+                if(mBound){
+                    if(musicService.isPlaying()) {
+                        sbProgress.setMax(musicService.getDuration() / 1000);
+                        sbProgress.setProgress(musicService.getCurrentPos() / 1000);
                     }
                 }
                 updateHandler.postDelayed(this, 1000);
@@ -88,11 +83,8 @@ public class DetailsActivity extends Activity{
         sbProgress.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if(player != null && fromUser)
-                {
-                    if(player.isPlaying() || fromPause){
-                        player.seekTo(progress * 1000);
-                    }
+                if(mBound && musicService.isPlaying() && fromUser){
+                    musicService.seekTo(progress * 1000);
                 }
             }
             @Override
@@ -100,83 +92,38 @@ public class DetailsActivity extends Activity{
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) { }
         });
-        player.setOnCompletionListener(MediaPlayer::reset);
-        player.setOnPreparedListener(mediaPlayer -> {
-            sbProgress.setMax(mediaPlayer.getDuration() / 1000);
-            mediaPlayer.start();
-        });
         ImageButton play = findViewById(R.id.play);
         play.setOnClickListener(v -> {
-            if(!player.isPlaying()){
-              if(fromPause){
-                  if(fromSave){
-                      resumeSong(mLastPos);
-                      fromSave = false;
-                  }else player.start();
-                  fromPause = false;
-              }else {
-                  playSong();
-              }
+            startService(new Intent(this, MusicService.class));
+            if(musicService.isPaused()){
+                musicService.resumeSong();
+            }else{
+                musicService.playSong(mCurrentSong);
             }
         });
         ImageButton pause = findViewById(R.id.pause);
         pause.setOnClickListener(v -> {
-            if(player.isPlaying()){
-                mLastPos = player.getCurrentPosition();
-                duration = player.getDuration();
-                player.pause();
-                fromPause = true;
-                fromSave = false;
-            }
+            musicService.pauseSong();
         });
-    }
-    @Override
-    protected void onSaveInstanceState(@NonNull Bundle outState){
-        super.onSaveInstanceState(outState);
-        Log.d("Event", "onSaveInstanceState");
-        if(fromPause){
-            outState.putBoolean("fromPause", true);
-            outState.putInt("position", mLastPos);
-            outState.putInt("duration", duration);
-        }
-        if(player != null && player.isPlaying()){
-            Log.d("INFO", "onSave");
-            outState.putInt("position", player.getCurrentPosition());
-            outState.putBoolean("isPlaying", true);
-            outState.putString("currentSong", mCurrentSong);
-        }
-        else outState.putBoolean("isPlaying", false);
-    }
-    @Override
-    protected void onRestoreInstanceState(@NonNull Bundle savedInstance){
-        super.onRestoreInstanceState(savedInstance);
-        Log.d("Event", "onRestoreInstanceState");
-        int pos = savedInstance.getInt("position");
-        if(savedInstance.getBoolean("fromPause"))
-        {
-            mLastPos = pos;
-            fromPause = true;
-            fromSave = true;
-            int duration = savedInstance.getInt("duration");
-            sbProgress.setMax(duration / 1000);
-            sbProgress.setProgress(pos / 1000);
-        }
-        if(player != null && savedInstance.getBoolean("isPlaying")){
-            Log.d("INFO", "onRestore");
-            mCurrentSong = savedInstance.getString("currentSong");
-            resumeSong(pos);
-        }
     }
     @Override
     protected void onDestroy() {
         super.onDestroy();
         Log.d("Event", "onDestroy");
-        super.onStop();
-        if (player.isPlaying()) {
-            player.stop();
-            player.release();
-        }
-        fromSave = false;
-        player = null;
     }
+    ServiceConnection serviceConnection = new ServiceConnection () {
+        @Override
+        public void onServiceConnected(ComponentName componentName, IBinder iBinder) {
+            MusicService.MusicBinder binder = (MusicService.MusicBinder) iBinder;
+            musicService = binder.getService();
+            if(!mCurrentSong.equals(musicService.getCurrentSong())){
+                musicService.reset();
+            }
+            mBound = true;
+        }
+        @Override
+        public void onServiceDisconnected(ComponentName componentName) {
+            mBound = false;
+        }
+    };
 }
