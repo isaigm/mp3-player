@@ -9,16 +9,20 @@ import android.net.Uri;
 import android.os.Binder;
 import android.os.IBinder;
 import androidx.annotation.Nullable;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 
 import java.io.IOException;
 
 public class MusicService extends Service {
     private MediaPlayer player = new MediaPlayer();
-    public static final String INTENT_FILTER = "GET_DURATION";
     private final IBinder binder = new MusicBinder();
+    private static final String CHANNEL_ID = "NOTIFICATION";
+    private static final int NOTIFICATION_ID = 0;
     private int mCurrentPos = 0;
     private boolean mPause = false;
     private String mCurrentSong;
+    private NotificationCompat.Builder builder;
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
@@ -35,6 +39,12 @@ public class MusicService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.baseline_queue_music_white_24dp)
+                .setContentTitle("MP3-Player")
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setOngoing(true)
+                .setAutoCancel(false);
         player.setOnPreparedListener(MediaPlayer::start);
         player.setOnCompletionListener(MediaPlayer::reset);
     }
@@ -54,9 +64,12 @@ public class MusicService extends Service {
             mPause = true;
         }
     }
-    void playSong(String uri){
+    void playSong(String uri, String title){
         mCurrentSong = uri;
         mPause = false;
+        builder.setContentText(title);
+        NotificationManagerCompat notificationManagerCompat = NotificationManagerCompat.from(getApplicationContext());
+        notificationManagerCompat.notify(NOTIFICATION_ID, builder.build());
         reset();
         try {
             assert player != null;
@@ -97,6 +110,6 @@ public class MusicService extends Service {
     @Override
     public void onTaskRemoved(Intent rootIntent) {
         NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        mNotificationManager.cancel(0);
+        mNotificationManager.cancel(NOTIFICATION_ID);
     }
 }

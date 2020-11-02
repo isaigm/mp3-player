@@ -1,10 +1,7 @@
 package mx.uv.fiee.iinf.mp3player;
 import android.app.Activity;
-import android.content.BroadcastReceiver;
 import android.content.ComponentName;
-import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.os.Bundle;
 import android.os.Handler;
@@ -12,18 +9,13 @@ import android.os.IBinder;
 import android.util.Log;
 import android.widget.ImageButton;
 import android.widget.SeekBar;
-
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.app.NotificationCompat;
-import androidx.core.app.NotificationManagerCompat;
 
 public class DetailsActivity extends Activity{
 
     private SeekBar sbProgress;
     private MusicService musicService;
     private String mCurrentSong;
-    private static final String CHANNEL_ID = "NOTIFICATION";
     private boolean mBound = false;
     @Override
     protected void onPause() {
@@ -61,13 +53,6 @@ public class DetailsActivity extends Activity{
         String mTitle = song.getString("title");
         setContentView(R.layout.activity_details);
         sbProgress = findViewById(R.id.sbProgress);
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.drawable.baseline_queue_music_white_24dp)
-                .setContentTitle("MP3-Player")
-                .setContentText(mTitle)
-                .setPriority(NotificationCompat.PRIORITY_HIGH);
-        NotificationManagerCompat notificationManagerCompat = NotificationManagerCompat.from(getApplicationContext());
-        notificationManagerCompat.notify(0, builder.build());
         Handler updateHandler = new Handler();
         DetailsActivity.this.runOnUiThread(new Runnable() {
             public void run() {
@@ -98,7 +83,7 @@ public class DetailsActivity extends Activity{
             if(musicService.isPaused()){
                 musicService.resumeSong();
             }else{
-                musicService.playSong(mCurrentSong);
+                musicService.playSong(mCurrentSong, mTitle);
             }
         });
         ImageButton pause = findViewById(R.id.pause);
